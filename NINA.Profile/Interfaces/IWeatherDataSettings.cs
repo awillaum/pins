@@ -27,5 +27,6 @@ namespace NINA.Profile.Interfaces {
         bool IndiAutoSearch { get; set; }
         string IndiAddress { get; set; }
         string IndiDriver { get; set; }
+        string IndigoDriver { get; set; }
     }
 }

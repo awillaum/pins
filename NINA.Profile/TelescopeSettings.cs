@@ -47,6 +47,7 @@ namespace NINA.Profile {
             indiPort = "/dev/ttyUSB0";
             indiBaudRate = 9600;
             indiDriver = "None";
+            indigoDriver = "None";
             indiMaxSlewRateDps = 4.0;
         }
 
@@ -297,6 +298,18 @@ namespace NINA.Profile {
             set {
                 if (indiDriver != value) {
                     indiDriver = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private string indigoDriver;
+        [DataMember]
+        public string IndigoDriver {
+            get => indigoDriver;
+            set {
+                if (indigoDriver != value) {
+                    indigoDriver = value;
                     RaisePropertyChanged();
                 }
             }

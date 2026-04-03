@@ -31,6 +31,7 @@ namespace NINA.Profile {
         protected override void SetDefaultValues() {
             id = "No_Device";
             indiDriver = "None";
+            indigoDriver = "None";
             lastDeviceName = string.Empty;
             indiConnectionMode = "CONNECTION_SERIAL";
             indiPort = "/dev/ttyUSB0";
@@ -72,6 +73,18 @@ namespace NINA.Profile {
             set {
                 if (indiDriver != value) {
                     indiDriver = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private string indigoDriver;
+        [DataMember]
+        public string IndigoDriver {
+            get => indigoDriver;
+            set {
+                if (indigoDriver != value) {
+                    indigoDriver = value;
                     RaisePropertyChanged();
                 }
             }

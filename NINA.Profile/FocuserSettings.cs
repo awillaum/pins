@@ -58,6 +58,7 @@ namespace NINA.Profile {
             indiAutoSearch = true;
             indiAddress = "localhost";
             indiDriver = "None";
+            indigoDriver = "None";
             manualStepSmallMultiplier = 0.5;
             manualStepLargeMultiplier = 5.0;
         }
@@ -422,6 +423,18 @@ namespace NINA.Profile {
             set {
                 if (indiDriver != value) {
                     indiDriver = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private string indigoDriver;
+        [DataMember]
+        public string IndigoDriver {
+            get => indigoDriver;
+            set {
+                if (indigoDriver != value) {
+                    indigoDriver = value;
                     RaisePropertyChanged();
                 }
             }

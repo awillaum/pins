@@ -1,0 +1,224 @@
+#region "copyright"
+
+/*
+    Copyright © 2025-2026 Nico Trost <nico.trost57@gmail.com> and the PI.N.S. contributors
+
+    This file is part of PI 'N' Stars.
+
+    This Source Code Form is subject to the terms of the Mozilla Public
+    License, v. 2.0. If a copy of the MPL was not distributed with this
+    file, You can obtain one at http://mozilla.org/MPL/2.0/.
+*/
+
+#endregion "copyright"
+
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using NINA.Core.Utility;
+using NINA.Equipment.Equipment;
+using NINA.Equipment.Interfaces;
+using NINA.INDI;
+using NINA.INDI.Interfaces;
+using NINA.Indigo.Devices;
+using NINA.Profile.Interfaces;
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace NINA.Equipment.Equipment.MyFocuser {
+
+    public partial class IndigoFocuser : IndigoDevice<IINDIFocuser>, IFocuser, IDisposable {
+
+        public IndigoFocuser(INDIDeviceInfo info, IProfileService profileService = null) : base(info) {
+            this.profileService = profileService;
+        }
+
+        private IProfileService profileService;
+
+        public bool IsMoving => GetProperty(nameof(IINDIFocuser.IsMoving), false);
+
+        public int MaxIncrement => GetProperty(nameof(IINDIFocuser.MaxIncrement), -1);
+
+        public bool CanSetMaxStep => GetProperty(nameof(IINDIFocuser.CanSetMaxStep), false);
+        public int MaxStep {
+            get {
+                if (CanSetMaxStep) {
+                    return GetProperty(nameof(IINDIFocuser.MaxStep), -1);
+                }
+                return -1;
+            }
+            set {
+                if (CanSetMaxStep && ShouldBeConnected) {
+                    SetProperty(nameof(IINDIFocuser.MaxStep), value);
+                }
+            }
+        }
+
+        public bool CanReverse => GetProperty(nameof(IINDIFocuser.CanReverse), false);
+        public bool Reverse {
+            get {
+                if (CanReverse) {
+                    return GetProperty(nameof(IINDIFocuser.Reverse), false);
+                }
+                return false;
+            }
+            set {
+                if (CanReverse && ShouldBeConnected) {
+                    SetProperty(nameof(IINDIFocuser.Reverse), value);
+                }
+            }
+        }
+
+        private bool _isAbsolute = true;
+        private int internalPosition;
+
+        public int Position {
+            get {
+                if (_isAbsolute) {
+                    return GetProperty(nameof(IINDIFocuser.Position), -1);
+                } else {
+                    return internalPosition;
+                }
+            }
+        }
+
+        public double StepSize => GetProperty(nameof(IINDIFocuser.StepSize), double.NaN);
+
+        public bool TempCompAvailable => GetProperty(nameof(IINDIFocuser.TempCompAvailable), false);
+
+        public bool TempComp {
+            get {
+                if (TempCompAvailable) {
+                    return GetProperty(nameof(IINDIFocuser.TempComp), false);
+                } else {
+                    return false;
+                }
+            }
+            set {
+                if (ShouldBeConnected && TempCompAvailable) {
+                    SetProperty(nameof(IINDIFocuser.TempComp), value);
+                }
+            }
+        }
+
+        public double Temperature => GetProperty(nameof(IINDIFocuser.Temperature), double.NaN);
+
+        [RelayCommand]
+        public void ResetPosition() {
+            if (Position > 0) {
+                device.SyncPosition(0);
+                RaisePropertyChanged(nameof(Position));
+            }
+        }
+
+        public Task Move(int position, CancellationToken ct, int waitInMs = 1000) {
+            if (_isAbsolute) {
+                return MoveInternalAbsolute(position, ct, waitInMs);
+            } else {
+                return MoveInternalRelative(position, ct, waitInMs);
+            }
+        }
+
+        private static TimeSpan SameFocuserPositionTimeout = TimeSpan.FromMinutes(1);
+
+        private async Task MoveInternalAbsolute(int position, CancellationToken ct, int waitInMs = 1000) {
+            if (ShouldBeConnected) {
+                var reEnableTempComp = TempComp;
+                if (reEnableTempComp) TempComp = false;
+
+                var lastPosition = int.MinValue;
+                var lastMovementTime = DateTime.Now;
+                while (position != Position && !ct.IsCancellationRequested) {
+                    await device.MoveAsync(position, ct);
+                    InvalidatePropertyCache();
+
+                    if (lastPosition == Position) {
+                        var samePositionTime = DateTime.Now - lastMovementTime;
+                        if (samePositionTime >= SameFocuserPositionTimeout) {
+                            throw new Exception($"Focuser stuck at position {lastPosition} beyond {SameFocuserPositionTimeout} timeout");
+                        }
+                        await CoreUtil.Wait(TimeSpan.FromSeconds(1), ct);
+                    } else {
+                        lastMovementTime = DateTime.Now;
+                    }
+                    lastPosition = device.Position;
+                }
+
+                if (reEnableTempComp) TempComp = true;
+            }
+        }
+
+        private async Task MoveInternalRelative(int position, CancellationToken ct, int waitInMs = 1000) {
+            if (ShouldBeConnected) {
+                var reEnableTempComp = TempComp;
+                if (reEnableTempComp) TempComp = false;
+
+                var relativeOffsetRemaining = position - this.Position;
+                while (relativeOffsetRemaining != 0 && !ct.IsCancellationRequested) {
+                    var moveAmount = Math.Min(MaxIncrement, Math.Abs(relativeOffsetRemaining));
+                    if (relativeOffsetRemaining < 0) moveAmount *= -1;
+                    await device.MoveAsync(moveAmount, ct);
+                    InvalidatePropertyCache();
+
+                    while (IsMoving && !ct.IsCancellationRequested) {
+                        await CoreUtil.Wait(TimeSpan.FromMilliseconds(waitInMs), ct);
+                    }
+                    relativeOffsetRemaining -= moveAmount;
+                    internalPosition += moveAmount;
+                }
+
+                if (reEnableTempComp) TempComp = true;
+            }
+        }
+
+        private bool _canHalt;
+
+        public void Halt() {
+            if (ShouldBeConnected && _canHalt) {
+                try {
+                    device.Halt();
+                } catch (NotImplementedException) {
+                    _canHalt = false;
+                } catch (Exception ex) {
+                    Logger.Error(ex);
+                }
+            }
+        }
+
+        protected override string ConnectionLostMessage => "FocuserConnectionLost";
+
+        private void Initialize() {
+            var maxStep = device.MaxStep;
+            internalPosition = maxStep > 0 ? maxStep / 2 : 0;
+            _isAbsolute = device.Absolute;
+            if (!_isAbsolute) {
+                Logger.Info("The INDIGO focuser is a relative focuser. Simulating absolute focuser behavior");
+            }
+            _canHalt = true;
+        }
+
+        protected override Task PreConnect() {
+            if (profileService != null) {
+                var settings = profileService.ActiveProfile.FocuserSettings;
+                var instance = GetInstance();
+                instance.ConfigureConnectionProperties(
+                    settings.IndiConnectionMode,
+                    settings.IndiAutoSearch,
+                    settings.IndiAddress,
+                    settings.IndiPort,
+                    settings.IndiBaudRate
+                );
+            }
+            return Task.CompletedTask;
+        }
+
+        protected override Task PostConnect() {
+            Initialize();
+            return Task.CompletedTask;
+        }
+
+        protected override IINDIFocuser GetInstance() {
+            return device ??= new NINA.Indigo.Devices.IndigoFocuser(_device);
+        }
+    }
+}

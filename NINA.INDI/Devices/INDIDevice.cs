@@ -42,15 +42,21 @@ namespace NINA.INDI.Devices
 
         private readonly INDIDeviceInfo _device;
 
+        /// <summary>
+        /// Returns the INDIClient instance to use for protocol communication.
+        /// Override in subclasses to use a different client (e.g. IndigoClient).
+        /// </summary>
+        protected virtual INDIClient Client => INDIClient.Instance;
+
         public INDIDevice(INDIDeviceInfo device)
         {
             _device = device;
 
             // Register device to receive property updates
-            INDIClient.Instance.RegisterDevice(this);
+            Client.RegisterDevice(this);
 
             // Request fresh properties from the driver
-            INDIClient.Instance.GetProperties(Id);
+            Client.GetProperties(Id);
 
             // Wait for CONNECTION property (always required, according to INDI)
             string[] requiredProps = ["CONNECTION"];
@@ -180,7 +186,7 @@ namespace NINA.INDI.Devices
             if (number == null) return;
 
             number.Value = value;
-            INDIClient.Instance.SendProperty(prop);
+            Client.SendProperty(prop);
         }
 
         public void SetNumberValues(string propertyName, params (string elementName, double value)[] values)
@@ -197,7 +203,7 @@ namespace NINA.INDI.Devices
                 }
             }
 
-            INDIClient.Instance.SendProperty(prop);
+            Client.SendProperty(prop);
         }
 
         public async Task<bool> SetNumberValuesAsync(string propertyName, TimeSpan timeout, params (string elementName, double value)[] values)
@@ -374,7 +380,7 @@ namespace NINA.INDI.Devices
                 }
             }
 
-            INDIClient.Instance.SendProperty(prop);
+            Client.SendProperty(prop);
         }
 
         public void SetSwitchProperty(string propertyName, Dictionary<string, bool> values)
@@ -412,7 +418,7 @@ namespace NINA.INDI.Devices
                 }
             }
 
-            INDIClient.Instance.SendProperty(prop);
+            Client.SendProperty(prop);
         }
 
         public void SetTextValue(string propertyName, string elementName, string value)
@@ -424,7 +430,7 @@ namespace NINA.INDI.Devices
             if (text == null) return;
 
             text.Value = value;
-            INDIClient.Instance.SendProperty(prop);
+            Client.SendProperty(prop);
         }
 
         public async Task<bool> SetTextValueAsync(string propertyName, string elementName, string value, TimeSpan timeout)
@@ -571,7 +577,7 @@ namespace NINA.INDI.Devices
             Logger.Info($"Disconnecting from INDI device: {DeviceName}");
 
             // Check if INDI client is still connected to server
-            if (!INDIClient.Instance.IsConnected)
+            if (!Client.IsConnected)
             {
                 Logger.Info($"INDI server already disconnected, skipping graceful disconnect for {DeviceName}");
                 _connected = false;
@@ -612,7 +618,7 @@ namespace NINA.INDI.Devices
                 // If the driver was unloaded while we were waiting (e.g. the user switched to a
                 // different INDI driver), the INDI server will never ack the DISCONNECT command.
                 // Skip the failure and treat the device as disconnected.
-                if (!INDIClient.Instance.IsDeviceKnown(Id))
+                if (!Client.IsDeviceKnown(Id))
                 {
                     Logger.Info($"INDI device '{DeviceName}' driver was unloaded during disconnect — treating as disconnected");
                     success = true;
@@ -651,7 +657,7 @@ namespace NINA.INDI.Devices
             }
 
             // Unregister device from client
-            INDIClient.Instance.UnregisterDevice(this);
+            Client.UnregisterDevice(this);
         }
 
         /// <summary>

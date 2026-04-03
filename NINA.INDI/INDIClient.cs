@@ -54,7 +54,7 @@ namespace NINA.INDI {
             }
         }
 
-        private readonly int _port;
+        protected readonly int _port;
         private TcpClient _tcpClient;
         private NetworkStream _stream;
         private Task _receiveTask;
@@ -65,9 +65,9 @@ namespace NINA.INDI {
         private readonly SemaphoreSlim _getDriversSemaphore = new(1, 1);
 
         // Signals when the server is ready for driver operations
-        private readonly TaskCompletionSource<bool> _serverReadyTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        protected readonly TaskCompletionSource<bool> _serverReadyTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        private readonly Dictionary<string, INDIDeviceInfo> _discoveredDevices = [];
+        protected readonly Dictionary<string, INDIDeviceInfo> _discoveredDevices = [];
         // Multiple devices can share the same INDI device name when the driver exposes
         // both a telescope and a focuser interface (e.g. indi_lx200generic).
         // All registered instances receive property updates so that an external disconnect
@@ -79,13 +79,21 @@ namespace NINA.INDI {
         // (telescope + focuser). The driver process is only stopped when ALL interfaces are removed.
         private readonly Dictionary<string, HashSet<DeviceInterface>> _loadedDrivers = [];
 
-        public INDIClient(int port) {
+        public INDIClient(int port) : this(port, true) { }
+
+        /// <summary>
+        /// Protected constructor used by subclasses. When <paramref name="autoStart"/> is false,
+        /// the server startup is deferred to the subclass constructor.
+        /// </summary>
+        protected INDIClient(int port, bool autoStart) {
             if (port < 1 || port > 65535) {
                 throw new ArgumentOutOfRangeException(nameof(port), "Port must be between 1 and 65535.");
             }
 
             _port = port;
-            Task.Run(async () => await StartServerInFifoMode());
+            if (autoStart) {
+                Task.Run(async () => await StartServerInFifoMode());
+            }
         }
 
         public bool IsConnected => _tcpClient?.Connected ?? false;
@@ -391,7 +399,7 @@ namespace NINA.INDI {
             }
         }
 
-        public async Task<IReadOnlyList<INDIDeviceInfo>> GetDevices(DeviceInterface deviceInterface, string driver, CancellationToken ct = default) {
+        public virtual async Task<IReadOnlyList<INDIDeviceInfo>> GetDevices(DeviceInterface deviceInterface, string driver, CancellationToken ct = default) {
             // Serialize GetDevices calls to prevent concurrent driver load/unload operations
             await _getDriversSemaphore.WaitAsync(ct);
             try {
@@ -477,7 +485,7 @@ namespace NINA.INDI {
         /// May be empty if unknown. This is populated from the server's stdout
         /// banner or from the running process metadata where available.
         /// </summary>
-        public string GetServerVersionString() {
+        public virtual string GetServerVersionString() {
             if (!string.IsNullOrWhiteSpace(_serverVersionString)) return _serverVersionString;
             // Fallback: return a tiny default if we have no info
             return IsConnected ? "indiserver (connected)" : "indiserver (unknown)";
@@ -487,7 +495,7 @@ namespace NINA.INDI {
         /// Returns an optional platform version derived from the indiserver binary
         /// metadata (if readable). If not available returns Version(0,0,0,0).
         /// </summary>
-        public Version GetServerPlatformVersion() {
+        public virtual Version GetServerPlatformVersion() {
             return _serverPlatformVersion ?? new Version(0, 0, 0, 0);
         }
 
@@ -788,7 +796,7 @@ namespace NINA.INDI {
         private Version _serverPlatformVersion = null;
         private const string _fifoPath = "/tmp/indiFIFO";
 
-        private async Task StartServerInFifoMode() {
+        protected virtual async Task StartServerInFifoMode() {
             try {
                 // Kill any existing indiserver processes
                 KillExistingServer();
@@ -822,7 +830,7 @@ namespace NINA.INDI {
                 for (int attempt = 1; attempt <= 10; attempt++) {
                     await Task.Delay(100 * attempt); // Exponential backoff: 100ms, 200ms, 300ms...
 
-                    if (await INDIClient.Instance.Connect()) {
+                    if (await Connect()) {
                         connected = true;
                         Logger.Info($"Connected to INDI server on attempt {attempt}");
                         break;

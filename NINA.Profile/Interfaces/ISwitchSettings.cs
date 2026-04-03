@@ -18,6 +18,7 @@ namespace NINA.Profile.Interfaces {
         string Id { get; set; }
         string LastDeviceName { get; set; }
         string IndiDriver { get; set; }
+        string IndigoDriver { get; set; }
         string IndiConnectionMode { get; set; }
         string IndiPort { get; set; }
         int IndiBaudRate { get; set; }

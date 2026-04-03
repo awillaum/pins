@@ -39,6 +39,7 @@ namespace NINA.Profile.Interfaces {
         string IndiPort { get; set; }
         int IndiBaudRate { get; set; }
         string IndiDriver { get; set; }
+        string IndigoDriver { get; set; }
         double IndiMaxSlewRateDps { get; set; }
     }
 }
